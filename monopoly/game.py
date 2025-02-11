@@ -8,7 +8,8 @@ import asyncio
 import logging
 import os
 from io import BytesIO
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
+import textwrap
 from random import randint, shuffle
 
 
@@ -20,11 +21,11 @@ class MonopolyGame():
 	"""
 	A game of Monopoly.
 	If data is not provided, startCash and uid must be instead.
-	
+
 	Params:
 	ctx = redbot.core.commands.context.Context, The context that created the game.
 	channel = discord.abc.GuildChannel, The channel where game messages will be sent to.
-	
+
 	Kwargs:
 	startCash = Optional[int], The amount of money players should start with.
 	uid = Optional[list], The user IDs of the players of the game.
@@ -78,6 +79,7 @@ class MonopolyGame():
 				-1, 0, 0, -1, 0,
 				0, -1, 0, -1, 0
 			]
+			self.names = []
 			self.freeparkingsum = 0
 		else:
 			self.p = data['p']
@@ -90,6 +92,7 @@ class MonopolyGame():
 			self.ownedby = data['ownedby']
 			self.numhouse = data['numhouse']
 			self.ismortgaged = data['ismortgaged']
+			self.names = data['names']
 			self.num = data['num']
 			self.numalive = data['numalive']
 			self.uid = [
@@ -108,14 +111,20 @@ class MonopolyGame():
 			'ownedby': {'value': None, 'image': None},
 			'ismortgaged': {'value': None, 'image': None},
 			'tile': {'value': None, 'image': None},
-			'numhouse': {'value': None, 'image': None}
+			'numhouse': {'value': None, 'image': None},
+            'names' : {'value': None, 'image': None},
+			'bal' : {'value': None, 'image': None}
 		}
+		self.fontsize = 36
+		self.namepaddingfactor = 1.25
+		self.balpaddingfactor = 1.26
+		self.font = ImageFont.truetype(bundled_data_path(self.cog) / 'Kabel-Heavy.ttf', self.fontsize)
 		self.is_ai = lambda p: isinstance(self.uid[p], MonopolyAI)
 		self.log = logging.getLogger('red.flamecogs.monopoly')
 		self.msg = ''
 		self._task = asyncio.create_task(self.run())
 		self._task.add_done_callback(self.error_callback) #Thanks Sinbad <3
-	
+
 	async def send_error(self):
 		"""Sends a message to the channel after an error."""
 		savename = str(self.ctx.message.id)
@@ -128,7 +137,7 @@ class MonopolyGame():
 		)
 		async with self.cog.config.guild(self.channel.guild).saves() as saves:
 			saves[savename] = self.autosave
-	
+
 	async def send_timeout(self):
 		"""Cleanup code when a user times out."""
 		savename = str(self.ctx.message.id)
@@ -139,7 +148,7 @@ class MonopolyGame():
 		)
 		async with self.cog.config.guild(self.channel.guild).saves() as saves:
 			saves[savename] = self.autosave
-	
+
 	def error_callback(self, fut):
 		"""Checks for errors in stopped games."""
 		try:
@@ -157,7 +166,7 @@ class MonopolyGame():
 			self.cog.games.remove(self)
 		except ValueError:
 			pass
-	
+
 	def make_save(self):
 		"""Creates a save dict from the current game state."""
 		save = {}
@@ -176,7 +185,7 @@ class MonopolyGame():
 		save['uid'] = [u if isinstance(u, int) else u.to_save() for u in self.uid]
 		save['freeparkingsum'] = self.freeparkingsum
 		self.autosave = save
-	
+
 	async def get_member(self, uid):
 		"""Wrapper for guild.get_member that checks if the member is None."""
 		if not isinstance(uid, int):
@@ -198,7 +207,7 @@ class MonopolyGame():
 				saves[savename] = self.autosave
 			raise GetMemberError
 		return mem
-	
+
 	async def send(self, *, img=False, view=None):
 		"""Safely send the contents of self.msg."""
 		if img and self.channel.permissions_for(self.channel.guild.me).attach_files:
@@ -215,9 +224,19 @@ class MonopolyGame():
 			else:
 				await self.channel.send(page)
 		self.msg = ''
-	
+
 	async def run(self):
 		"""Runs a game of monopoly."""
+
+		# Get usernames
+		for u in self.uid:
+			user = self.channel.guild.get_member(u)
+			if user:
+				self.names.append(str(user))
+			else:
+				botmember = await self.get_member(u)
+				self.names.append(botmember.display_name)
+
 		while self.numalive > 1:
 			self.make_save()
 			if self.p >= self.num:
@@ -261,7 +280,7 @@ class MonopolyGame():
 					choices.append('r')
 					if self.goojf[self.p] > 0:
 						choices.append('g')
-				
+
 				if self.jailturn[self.p] > maxJailRolls and self.goojf[self.p] == 0:
 					choice = 'b'
 				elif self.is_ai(self.p):
@@ -303,7 +322,7 @@ class MonopolyGame():
 							await view.wait()
 							if not view.result:
 								continue
-					self.bal[self.p] -= bailValue 
+					self.bal[self.p] -= bailValue
 					self.freeparkingsum += bailValue
 					self.jailturn[self.p] = -1
 					self.injail[self.p] = False
@@ -400,7 +419,7 @@ class MonopolyGame():
 									'You can load your save with '
 									f'`{self.ctx.prefix}monopoly {savename}`.'
 								)
-							self.msg = 'Not overriding.\n'		
+							self.msg = 'Not overriding.\n'
 						else:
 							saves[savename] = self.autosave
 							return await self.channel.send(
@@ -440,7 +459,7 @@ class MonopolyGame():
 		else:
 			mention = mem.display_name
 		await self.channel.send(f'{mention} wins!')
-	
+
 	async def land(self, distance):
 		"""Move players and handle the events that happen when they land."""
 		self.tile[self.p] += distance
@@ -787,7 +806,7 @@ class MonopolyGame():
 						f'You paid ${distance * 4} of rent to {memown.display_name}. '
 						f'You now have ${self.bal[self.p]}. {memown.display_name} now has '
 						f'${self.bal[self.ownedby[self.tile[self.p]]]}.\n'
-					) 
+					)
 			elif self.tile[self.p] in (5, 15, 25, 35): #railroad
 				rrcount = 0
 				if self.ownedby[5] == self.ownedby[self.tile[self.p]]:
@@ -883,7 +902,7 @@ class MonopolyGame():
 				f'{memwin.display_name} now owns {TILENAME[self.tile[self.p]]} '
 				f'and has ${self.bal[highp]}.\n'
 			)
-	
+
 	async def debt(self):
 		"""Handle players who have a negative balance."""
 		while self.bal[self.p] < 0 and self.isalive[self.p]:
@@ -916,6 +935,12 @@ class MonopolyGame():
 					await view.wait()
 					if not view.result:
 						continue
+					user = self.channel.guild.get_member(self.uid[self.p])
+					self.names.remove(str(user))
+				else:
+					botmember = await self.get_member(self.uid[self.p])
+					self.names.remove(botmember.display_name)
+
 				for i in range(40):
 					if self.ownedby[i] == self.p:
 						self.ownedby[i] = -1
@@ -928,7 +953,7 @@ class MonopolyGame():
 				self.msg += f'{mem.display_name} is now out of the game.\n'
 				return
 		self.msg += f'You are now out of debt. You now have ${self.bal[self.p]}.\n'
-	
+
 	async def trade(self):
 		"""Trade properties between players."""
 		tradeable_p = []
@@ -1203,7 +1228,7 @@ class MonopolyGame():
 		for a in range(len(tradeable_partner)):
 			if to_trade_partner[a]:
 				self.ownedby[tradeable_partner[a]] = self.p
-	
+
 	async def house(self):
 		"""Buy and sell houses on monopolies."""
 		houseable = []
@@ -1265,7 +1290,7 @@ class MonopolyGame():
 					if max(new_values) - min(new_values) > 1:
 						self.msg += 'That is not a valid house setup.\n'
 						continue
-					test = self.numhouse[:] 
+					test = self.numhouse[:]
 					for a in range(len(new_values)):
 						test[props[a]] = new_values[a]
 					houseLimit = await self.cog.config.guild(self.channel.guild).houseLimit()
@@ -1283,7 +1308,7 @@ class MonopolyGame():
 							'There are not enough hotels for that setup.'
 							f'\nMax hotels: `{hotelLimit}`\nRequired houses: `{total_hotels}`\n'
 						)
-						continue 
+						continue
 					change = 0
 					for a in range(len(new_values)):
 						change += new_values[a] - self.numhouse[props[a]]
@@ -1348,7 +1373,7 @@ class MonopolyGame():
 							continue
 					value = int(value)
 					new_values[choice] = value
-	
+
 	async def mortgage(self):
 		"""Mortgage and unmortgage properties."""
 		mortgageable = []
@@ -1425,11 +1450,11 @@ class MonopolyGame():
 						f'You cannot afford the ${TENMORTGAGEPRICE[mortgageable[choice]]} '
 						f'it would take to unmortgage that. You only have ${self.bal[self.p]}.\n'
 					)
-	
-	def bprint(self, darkMode): 
+
+	def bprint(self, darkMode):
 		"""
 		Creates an image of a monopoly board with the current game data.
-		
+
 		Params:
 		darkMode = bool, use a darkmode board instead of a lightmode board.
 		"""
@@ -1649,7 +1674,7 @@ class MonopolyGame():
 							[(650-(t*50))-32,607,(650-(t*50))-16,613],
 							fill=(255,0,0,255)
 						)
-					elif 10 < t < 20:			
+					elif 10 < t < 20:
 						d.rectangle(
 							[138,(650-((t-10)*50))-33,146,(650-((t-10)*50))-17],
 							fill=outline
@@ -1715,6 +1740,34 @@ class MonopolyGame():
 								fill=(0,255,0,255)
 							)
 			self.imgcache['numhouse']['image'] = img
+		#END
+        #NAMES
+		if self.imgcache['names']['value'] != self.names:
+			self.imgcache['names']['value'] = self.names.copy()
+			img = Image.new("RGBA", (750, 750), (0, 0, 0, 0))
+			draw = ImageDraw.Draw(img)
+
+			nameheight = (750 / 2) - (self.fontsize * self.namepaddingfactor * len(self.names)) / 2
+			index = 0
+			for player in self.names:
+				draw.text((350, nameheight), player, pcolor[index], font=self.font)
+				nameheight = nameheight + (self.fontsize * self.namepaddingfactor)
+				index = index + 1
+			self.imgcache['names']['image'] = img
+        #END
+		#BALANCE
+		if self.imgcache['bal']['value'] != self.bal:
+			self.imgcache['bal']['value'] = self.bal.copy()
+			img = Image.new("RGBA", (750, 750), (0, 0, 0, 0))
+			draw = ImageDraw.Draw(img)
+
+			balheight = (750 / 2) - (self.fontsize * self.balpaddingfactor * len(self.bal)) / 2
+			for i in range(len(self.bal)):
+				txt = '$' + str(self.bal[i])
+				draw.text((340, balheight), txt, pcolor[i], font=self.font, anchor='rt')
+				balheight = balheight + (self.fontsize * self.balpaddingfactor)
+			self.imgcache['bal']['image'] = img
+
 		#END
 		if darkMode:
 			img = Image.open(bundled_data_path(self.cog) / 'dark.png')
