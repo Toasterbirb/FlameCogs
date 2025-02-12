@@ -867,7 +867,7 @@ class MonopolyGame():
 						m.author.id in self.uid
 						and self.bal[self.uid.index(m.author.id)] >= int(m.content)
 						and self.isalive[self.uid.index(m.author.id)]
-						and int(m.content) >= 0
+						and int(m.content) >= 1
 					)
 				return (
 					m.author.id in self.uid
