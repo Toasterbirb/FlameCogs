@@ -80,6 +80,7 @@ class MonopolyGame():
 				0, -1, 0, -1, 0
 			]
 			self.names = []
+			self.auction_active = False
 			self.freeparkingsum = 0
 		else:
 			self.p = data['p']
@@ -112,6 +113,7 @@ class MonopolyGame():
 			'ismortgaged': {'value': None, 'image': None},
 			'tile': {'value': None, 'image': None},
 			'numhouse': {'value': None, 'image': None},
+            'auction': {'value': True, 'image': None},
             'names' : {'value': None, 'image': None},
 			'bal' : {'value': None, 'image': None}
 		}
@@ -851,6 +853,8 @@ class MonopolyGame():
 	async def auction(self):
 		"""Hold auctions for unwanted properties."""
 		minRaise = await self.cog.config.guild(self.channel.guild).minRaise()
+		self.auction_active = True
+
 		self.msg += (
 			f'{TILENAME[self.tile[self.p]]} is now up for auction!\n'
 			'Anyone can bid by typing the value of their bid. '
@@ -891,6 +895,8 @@ class MonopolyGame():
 			await self.channel.send(
 				f'{bid_msg.author.display_name} has the highest bid with ${highest}.'
 			)
+
+		self.auction_active = False
 		if highp is None:
 			self.msg = 'Nobody bid...\n'
 		else:
@@ -1741,6 +1747,28 @@ class MonopolyGame():
 							)
 			self.imgcache['numhouse']['image'] = img
 		#END
+        #AUCTION TRIANGLE
+		if self.imgcache['auction']['value'] != self.auction_active:
+			self.imgcache['auction']['value'] = self.auction_active
+			img = Image.new("RGBA", (750, 750), (0, 0, 0, 0))
+			draw = ImageDraw.Draw(img)
+
+			t = self.tile[self.p]
+			offset_x = 10
+			offset_y = 90
+
+			if self.auction_active:
+				if 0 < t < 10:
+					draw.text((620-(t*50), 570), 'v', pcolor[self.p], font=self.font)
+				elif 10 < t < 20:
+					draw.text((150, 600-((t-10)*50) + offset_x), '<', pcolor[self.p], font=self.font)
+				elif 20 < t < 30:
+					draw.text((118+((t-20)*50), 152), '^', pcolor[self.p], font=self.font)
+				elif 30 < t < 40:
+					draw.text((575, 115+((t-30)*50) - offset_x), '>', pcolor[self.p], font=self.font)
+
+			self.imgcache['auction']['image'] = img
+        #END
         #NAMES
 		if self.imgcache['names']['value'] != self.names:
 			self.imgcache['names']['value'] = self.names.copy()
